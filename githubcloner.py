@@ -93,25 +93,32 @@ class getReposURLs(object):
         """
 
         URLs = []
+        API = "https://api.github.com/users/{}/repos?per_page=100&page=1".format(user)
+        while True:
+            if (username or token) is None:
+                resp = requests.get(API, headers=self.headers, timeout=self.timeout)
+            else:
+                resp = requests.get(API, headers=self.headers, timeout=self.timeout, auth=(username, token))
 
-        API = "https://api.github.com/users/{}/repos?per_page=40000000".format(user)
-        if (username or token) is None:
-            resp = requests.get(API, headers=self.headers, timeout=self.timeout).text
-        else:
-            resp = requests.get(API, headers=self.headers, timeout=self.timeout, auth=(username, token)).text
-        resp = json.loads(resp)
+            payload = json.loads(resp.text)
 
-        try:
-            if (resp["message"] == "Not Found"):
-                return([])  # The user does not exist. Returning an empty list.
-        except TypeError:
-            pass
+            try:
+                if (payload["message"] == "Not Found"):
+                    return([])  # The user does not exist. Returning an empty list.
+            except TypeError:
+                pass
 
-        for i in range(len(resp)):
-            URLs.append(resp[i]["git_url"])
+            for i in range(len(payload)):
+                URLs.append(payload[i]["git_url"])
 
-        if include_gists is True:
-            URLs.extend(self.UserGists(user, username=username, token=token))
+            if include_gists is True:
+                URLs.extend(self.UserGists(user, username=username, token=token))
+
+            if "next" not in resp.links:
+                break
+
+            API = resp.links["next"]["url"]
+
         return(URLs)
 
     def fromOrg(self, org_name, username=None, token=None):
