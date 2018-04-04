@@ -42,21 +42,28 @@ class getReposURLs(object):
         """
 
         URLs = []
-        API = "https://api.github.com/users/{}/gists".format(user)
-        if (username or token) is None:
-            resp = requests.get(API, headers=self.headers, timeout=self.timeout).text
-        else:
-            resp = requests.get(API, headers=self.headers, timeout=self.timeout, auth=(username, token)).text
-        resp = json.loads(resp)
+        API = "https://api.github.com/users/{}/gists?per_page=100&page=1".format(user)
+        while True:
+            if (username or token) is None:
+                resp = requests.get(API, headers=self.headers, timeout=self.timeout)
+            else:
+                resp = requests.get(API, headers=self.headers, timeout=self.timeout, auth=(username, token))
 
-        try:
-            if (resp["message"] == "Not Found"):
-                return([])  # The organization does not exist. Returning an empty list.
-        except TypeError:
-            pass
+            payload = json.loads(resp.text)
 
-        for i in range(len(resp)):
-            URLs.append(resp[i]["git_pull_url"])
+            try:
+                if (payload["message"] == "Not Found"):
+                    return([])  # The organization does not exist. Returning an empty list.
+            except TypeError:
+                pass
+
+            for i in range(len(payload)):
+                URLs.append(payload[i]["git_pull_url"])
+
+            if "next" not in resp.links:
+                break
+
+            API = resp.links["next"]["url"]
 
         return(URLs)
 
@@ -111,13 +118,13 @@ class getReposURLs(object):
             for i in range(len(payload)):
                 URLs.append(payload[i]["git_url"])
 
-            if include_gists is True:
-                URLs.extend(self.UserGists(user, username=username, token=token))
-
             if "next" not in resp.links:
                 break
 
             API = resp.links["next"]["url"]
+
+        if include_gists is True:
+            URLs.extend(self.UserGists(user, username=username, token=token))
 
         return(URLs)
 
