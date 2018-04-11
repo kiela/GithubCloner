@@ -42,7 +42,7 @@ class getReposURLs(object):
         """
 
         URLs = []
-        API = "https://api.github.com/users/{}/gists?per_page=100&page=1".format(user)
+        API = "https://api.github.com/users/{}/gists?per_page=5&page=1".format(user)
         while True:
             if (username or token) is None:
                 resp = requests.get(API, headers=self.headers, timeout=self.timeout)
@@ -78,13 +78,25 @@ class getReposURLs(object):
         """
 
         URLs = []
-        API = "https://api.github.com/gists"
+        API = "https://api.github.com/gists?per_page=5&page=1"
+        while True:
+            resp = requests.get(API, headers=self.headers, timeout=self.timeout, auth=(username, token))
+            payload = json.loads(resp.text)
 
-        resp = requests.get(API, headers=self.headers, timeout=self.timeout, auth=(username, token)).text
-        resp = json.loads(resp)
+            try:
+                if (payload["message"] == "Not Found"):
+                    return([])  # The organization does not exist. Returning an empty list.
+            except TypeError:
+                pass
 
-        for i in range(len(resp)):
-            URLs.append(resp[i]["git_pull_url"])
+            for i in range(len(payload)):
+                URLs.append(payload[i]["git_pull_url"])
+
+            if "next" not in resp.links:
+                break
+
+            API = resp.links["next"]["url"]
+
         return(URLs)
 
     def fromUser(self, user, username=None, token=None, include_gists=False):
@@ -100,7 +112,7 @@ class getReposURLs(object):
         """
 
         URLs = []
-        API = "https://api.github.com/users/{}/repos?per_page=100&page=1".format(user)
+        API = "https://api.github.com/users/{}/repos?per_page=5&page=1".format(user)
         while True:
             if (username or token) is None:
                 resp = requests.get(API, headers=self.headers, timeout=self.timeout)
@@ -141,7 +153,7 @@ class getReposURLs(object):
         """
 
         URLs = []
-        API = "https://api.github.com/orgs/{}/repos?per_page=100&page=1".format(org_name)
+        API = "https://api.github.com/orgs/{}/repos?per_page=5&page=1".format(org_name)
         while True:
             if (username or token) is None:
                 resp = requests.get(API, headers=self.headers, timeout=self.timeout)
@@ -181,31 +193,36 @@ class getReposURLs(object):
 
         URLs = []
         members = []
-
         URLs.extend(self.fromOrg(org_name, username=username, token=token))
+        API = "https://api.github.com/orgs/{}/members?per_page=5&page=1".format(org_name)
+        while True:
+            if (username or token) is None:
+                resp = requests.get(API, headers=self.headers, timeout=self.timeout)
+            else:
+                resp = requests.get(API, headers=self.headers, timeout=self.timeout, auth=(username, token))
 
-        API = "https://api.github.com/orgs/{}/members?per_page=40000000".format(org_name)
-        if (username or token) is None:
-            resp = requests.get(API, headers=self.headers, timeout=self.timeout).text
-        else:
-            resp = requests.get(API, headers=self.headers, timeout=self.timeout, auth=(username, token)).text
-        resp = json.loads(resp)
+            payload = json.loads(resp.text)
 
-        try:
-            if (resp["message"] == "Not Found"):
-                return([])  # The organization does not exist. Returning an empty list.
-        except TypeError:
-            pass
+            try:
+                if (payload["message"] == "Not Found"):
+                    return([])  # The organization does not exist. Returning an empty list.
+            except TypeError:
+                pass
 
-        for i in range(len(resp)):
-            members.append(resp[i]["login"])
+            for i in range(len(payload)):
+                members.append(payload[i]["login"])
+
+            if "next" not in resp.links:
+                break
+
+            API = resp.links["next"]["url"]
 
         for member in members:
             URLs.extend(self.fromUser(member, username=username, token=token, include_gists=include_gists))
 
         return(URLs)
 
-    def checkAuthencation(self, username, token):
+    def checkAuthentication(self, username, token):
         """
         Checks whether an authentication credentials are valid or not.
         Input:-
@@ -233,13 +250,26 @@ class getReposURLs(object):
         Output:-
         a list of Github repositories URLs.
         """
-        URLs = []
-        API = "https://api.github.com/user/repos?per_page=40000000&type=all"
-        resp = requests.get(API, headers=self.headers, timeout=self.timeout, auth=(username, token)).text
-        resp = json.loads(resp)
 
-        for i in range(len(resp)):
-            URLs.append(resp[i]["git_url"])
+        URLs = []
+        API = "https://api.github.com/user/repos?per_page=5&page=1"
+        while True:
+            resp = requests.get(API, headers=self.headers, timeout=self.timeout, auth=(username, token))
+            payload = json.loads(resp.text)
+
+            try:
+                if (payload["message"] == "Not Found"):
+                    return([])  # The organization does not exist. Returning an empty list.
+            except TypeError:
+                pass
+
+            for i in range(len(payload)):
+                URLs.append(payload[i]["git_url"])
+
+            if "next" not in resp.links:
+                break
+
+            API = resp.links["next"]["url"]
 
         return(URLs)
 
@@ -265,13 +295,17 @@ def cloneRepo(URL, cloningpath, username=None, token=None):
         if (username or token) is not None:
             URL = URL.replace("https://", "https://{}:{}@".format(username, token))
         repopath = URL.split("/")[-2] + "_" + URL.split("/")[-1]
-        repopath = repopath.rstrip(".git")
+        print(repopath)
+        repopath = repopath.rstrip("\.git")
+        print(repopath)
         if '@' in repopath:
             repopath = repopath.replace(repopath[:repopath.index("@") + 1], "")
+        print(repopath)
         fullpath = cloningpath + "/" + repopath
         with threading.Lock():
             print(fullpath)
 
+        print("-----")
         if os.path.exists(fullpath):
             git.Repo(fullpath).remote().pull()
         else:
@@ -385,7 +419,7 @@ def main():
         os.mkdir(output_path)
 
     if authentication is not None:
-        if getReposURLs().checkAuthencation(authentication.split(":")[0], authentication.split(":")[1]) is False:
+        if getReposURLs().checkAuthentication(authentication.split(":")[0], authentication.split(":")[1]) is False:
             print("Error: authentication failed.")
             print("\nExiting...")
             exit(1)
